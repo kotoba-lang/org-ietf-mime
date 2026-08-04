@@ -241,3 +241,77 @@
   (let [parts (parse/message-parts (parse/parse "From: a@e.com\r\nSubject: empty"))]
     (is (= "empty" (:subject parts)))
     (is (= "" (:text parts)))))
+
+;; --- RFC 2231 parameters ----------------------------------------------------
+
+(deftest extended-parameter-carries-a-non-ascii-filename
+  (testing "RFC 2231 §4. This is how a Japanese attachment name travels;
+            without it the filename arrives as its own percent-encoding"
+    (let [raw (str "Content-Type: multipart/mixed; boundary=b\r\n\r\n"
+                   "--b\r\n"
+                   "Content-Type: text/plain\r\n\r\n"
+                   "body\r\n"
+                   "--b\r\n"
+                   "Content-Type: application/pdf\r\n"
+                   "Content-Disposition: attachment;"
+                   " filename*=UTF-8''%E8%AB%8B%E6%B1%82%E6%9B%B8.pdf\r\n\r\n"
+                   "PDF\r\n"
+                   "--b--\r\n")
+          parts (parse/message-parts (parse/parse raw))]
+      (is (= ["請求書.pdf"] (mapv :filename (:attachments parts)))))))
+
+(deftest a-continued-parameter-is-not-truncated-at-its-first-segment
+  (testing "RFC 2231 §3. A long filename is split across name*0/name*1 and a
+            parser that reads only the first segment loses the rest"
+    (let [raw (str "Content-Type: application/pdf\r\n"
+                   "Content-Disposition: attachment;"
+                   " filename*0=\"very-long-\"; filename*1=\"invoice-2026.pdf\"\r\n\r\n"
+                   "PDF")
+          part (parse/parse raw)]
+      (is (= "very-long-invoice-2026.pdf" (:filename part))))))
+
+(deftest a-continued-extended-parameter-decodes-across-its-segments
+  (testing "the two rules compose: continuation *and* percent/charset"
+    (let [raw (str "Content-Type: application/pdf\r\n"
+                   "Content-Disposition: attachment;"
+                   " filename*0*=UTF-8''%E8%AB%8B%E6%B1%82;"
+                   " filename*1*=%E6%9B%B8.pdf\r\n\r\n"
+                   "PDF")]
+      (is (= "請求書.pdf" (:filename (parse/parse raw)))))))
+
+(deftest the-extended-parameter-wins-over-the-plain-one
+  (testing "RFC 2231 §4. Senders emit both — the plain one for old clients,
+            usually mangled — and preferring it throws away the correct name"
+    (let [raw (str "Content-Type: application/pdf\r\n"
+                   "Content-Disposition: attachment; filename=\"________.pdf\";"
+                   " filename*=UTF-8''%E8%AB%8B%E6%B1%82%E6%9B%B8.pdf\r\n\r\n"
+                   "PDF")]
+      (is (= "請求書.pdf" (:filename (parse/parse raw)))))))
+
+(deftest a-boundary-split-across-continuations-still-finds-the-parts
+  (testing "a truncated boundary matches nothing, so the message parses as
+            having no parts at all — with its body inside them"
+    (let [raw (str "Content-Type: multipart/mixed;"
+                   " boundary*0=\"aaaa\"; boundary*1=\"bbbb\"\r\n\r\n"
+                   "--aaaabbbb\r\n"
+                   "Content-Type: text/plain\r\n\r\n"
+                   "the body\r\n"
+                   "--aaaabbbb--\r\n")]
+      (is (= "the body" (:text (parse/message-parts (parse/parse raw))))))))
+
+(deftest an-ordinary-parameter-is-unchanged
+  (testing "the assembly must not disturb the common case"
+    (let [raw "Content-Type: text/plain; charset=\"utf-8\"\r\n\r\nhi"
+          part (parse/parse raw)]
+      (is (= "text/plain" (:content-type part)))
+      (is (= "hi" (:body part))))))
+
+(deftest an-encoded-word-in-a-parameter-is-decoded-as-a-fallback
+  (testing "RFC 2047 does not permit encoded-words in parameters. Senders
+            emit them anyway, and the alternative is showing the raw
+            =?UTF-8?B?…?= to somebody as a filename"
+    (let [raw (str "Content-Type: application/pdf\r\n"
+                   "Content-Disposition: attachment;"
+                   " filename=\"=?UTF-8?B?6KuL5rGC5pu4LnBkZg==?=\"\r\n\r\n"
+                   "PDF")]
+      (is (= "請求書.pdf" (:filename (parse/parse raw)))))))

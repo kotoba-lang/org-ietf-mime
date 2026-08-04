@@ -61,8 +61,8 @@
      :parts  [child …]}            ; multipart/* only"
   [raw {:keys [decoder] :as opts}]
   (let [{:keys [headers body]} (split-message raw)
-        {:keys [type charset boundary]} (header/content-type headers)
-        {:keys [disposition filename]} (or (header/content-disposition headers) {})
+        {:keys [type charset boundary]} (header/content-type headers decoder)
+        {:keys [disposition filename]} (or (header/content-disposition headers decoder) {})
         encoding (header/raw-header headers "content-transfer-encoding")
         multipart? (str/starts-with? type "multipart/")
         text? (str/starts-with? type "text/")
