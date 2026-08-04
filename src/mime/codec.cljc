@@ -227,6 +227,56 @@
        (some? decoder) (decoder cs s)
        :else s))))
 
+(defn valid-utf8?
+  "Whether this binary string is a well-formed UTF-8 sequence.
+
+  Structural, not statistical: every lead byte must be followed by the
+  right number of continuation bytes and nothing may be left over. Pure
+  ASCII counts (it is valid UTF-8), and so does the empty string."
+  [s]
+  (let [n (count s)
+        b #(bit-and (char-code (nth s %)) 0xff)]
+    (loop [i 0]
+      (if (>= i n)
+        true
+        (let [c (b i)
+              width (cond
+                      (< c 0x80) 1
+                      (= 0xc0 (bit-and c 0xe0)) 2
+                      (= 0xe0 (bit-and c 0xf0)) 3
+                      (= 0xf0 (bit-and c 0xf8)) 4
+                      :else 0)]
+          (cond
+            (zero? width) false
+            (> (+ i width) n) false
+            (not (every? #(= 0x80 (bit-and (b %) 0xc0))
+                         (range (inc i) (+ i width))))
+            false
+            :else (recur (+ i width))))))))
+
+(defn decode-8bit-header
+  "A header value that carries raw 8-bit bytes, best-effort.
+
+  RFC 5322 §2.2 says a header field is US-ASCII and RFC 2047 is how
+  non-ASCII gets in, so a raw UTF-8 `Subject:` is malformed mail. It is
+  also *common* mail — plenty of senders emit it, particularly for
+  Japanese — and the two ways to treat it are to hand back the bytes as
+  latin-1, which renders as mojibake, or to notice that they are
+  well-formed UTF-8 and decode them.
+
+  This does the second, and only when the bytes really are valid UTF-8.
+  That guard is what keeps a genuinely latin-1 header (`Müller`, one byte
+  per character) from being mangled by a decode it never asked for:
+  `0xFC` alone is not a legal UTF-8 lead byte, so such a header fails the
+  check and passes through untouched. Deliberately not a charset guess —
+  there is exactly one alternative interpretation here, and it is either
+  structurally possible or it is not."
+  [s]
+  (if (and (some #(>= (bit-and (char-code %) 0xff) 0x80) s)
+           (valid-utf8? s))
+    (decode-charset s "utf-8")
+    s))
+
 (defn decodable?
   "Whether `decode-charset` can handle this charset without a host
   decoder. Lets a caller decide what to do about the ones it cannot,
