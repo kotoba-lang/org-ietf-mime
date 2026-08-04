@@ -315,3 +315,42 @@
                    " filename=\"=?UTF-8?B?6KuL5rGC5pu4LnBkZg==?=\"\r\n\r\n"
                    "PDF")]
       (is (= "請求書.pdf" (:filename (parse/parse raw)))))))
+
+;; --- raw 8-bit headers ------------------------------------------------------
+
+(defn- binary
+  "A Clojure string as the binary string this library takes as input --
+  latin-1, one byte per character. Portable, because this suite runs on
+  both hosts and `String.` is JVM interop."
+  [s]
+  #?(:clj (String. (.getBytes ^String s "UTF-8") "ISO-8859-1")
+     :cljs (.toString (js/Buffer.from s "utf-8") "latin1")))
+
+(deftest a-raw-utf8-subject-is-read-as-utf8-rather-than-as-mojibake
+  (testing "RFC 5322 §2.2 makes a header US-ASCII and RFC 2047 is how
+            non-ASCII gets in, so this is malformed mail — and common mail,
+            particularly from Japanese senders. The alternative to decoding
+            it is showing somebody 進捗 as é²æ"
+    (let [raw (str "Subject: " (binary "進捗の確認") "\r\n\r\nbody")]
+      (is (= "進捗の確認" (:subject (parse/message-parts (parse/parse raw))))))))
+
+(deftest a-genuinely-latin1-header-is-not-mangled-by-the-fallback
+  (testing "the guard that makes the above safe: 0xFC is not a legal UTF-8
+            lead byte, so a latin-1 header fails the structural check and
+            passes through as it was"
+    (let [raw (str "Subject: M" (char 0xFC) "ller\r\n\r\nbody")]
+      (is (= (str "M" (char 0xFC) "ller")
+             (:subject (parse/message-parts (parse/parse raw))))))))
+
+(deftest an-encoded-word-still-wins-where-there-is-one
+  (let [raw "Subject: =?UTF-8?B?6ZOB?=\r\n\r\nbody"]
+    (is (= "铁" (:subject (parse/message-parts (parse/parse raw)))))))
+
+(deftest valid-utf8-is-structural
+  (is (true? (codec/valid-utf8? "plain ascii")))
+  (is (true? (codec/valid-utf8? "")))
+  (is (true? (codec/valid-utf8? (binary "日本語"))))
+  (is (false? (codec/valid-utf8? (str (char 0xFC) "ller")))
+      "a lone 0xFC is not a lead byte")
+  (is (false? (codec/valid-utf8? (str (char 0xE6) (char 0x97))))
+      "a three-byte lead with only one continuation is truncated"))

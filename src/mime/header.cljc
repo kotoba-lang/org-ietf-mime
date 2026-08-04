@@ -55,7 +55,11 @@
                         (if (and prev-was-word? gap-only?) "" before)
                         (decode-one m))
                   true))
-         (apply str (conj out rest-)))))))
+         ;; No encoded-word left. Whatever remains is either ASCII, or raw
+         ;; 8-bit bytes a sender put in a header that RFC 5322 says is
+         ;; US-ASCII — `decode-8bit-header` reads those as UTF-8 when they
+         ;; structurally are UTF-8, and leaves them alone when they are not.
+         (codec/decode-8bit-header (apply str (conj out rest-))))))))
 
 ;; ------------------------------------------------------------- parsing
 
