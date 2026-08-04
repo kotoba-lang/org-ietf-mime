@@ -13,7 +13,8 @@ over raw bytes. This library is the missing middle (ADR-2607263000 D8 in
 Named for this org's `org-<standards-body>-<spec>` convention, alongside
 `org-ietf-smtp` (RFC 5321) and `org-ietf-imap` (RFC 3501). Those two are
 transport *clients*; this is the message format they carry — RFC 5322 (message
-syntax), RFC 2045–2047 (MIME, transfer encodings, encoded-words), RFC 8601
+syntax), RFC 2045–2047 (MIME, transfer encodings, encoded-words), RFC 2231
+(parameter continuations and charset-tagged values), RFC 8601
 (Authentication-Results).
 
 ```clojure

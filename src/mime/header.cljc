@@ -133,21 +133,103 @@
                                 (unquote (subs seg (inc i)))])))
                      (rest segments))})))
 
+;; ------------------------------------------------- RFC 2231 parameters
+
+(defn- extended-value
+  "RFC 2231 §4 `charset'language'percent-encoded` -> `{:charset :text}`.
+
+  The language field is parsed and discarded: it says what human language
+  the value is in, which nothing here renders differently. A value with
+  neither apostrophe is a *continuation segment* rather than an initial
+  one — only the first segment carries the charset — so it comes back
+  with `:charset nil` and the caller supplies it."
+  [v]
+  (let [parts (str/split (str v) #"'" 3)]
+    (if (= 3 (count parts))
+      {:charset (not-empty (str/lower-case (first parts)))
+       :text (codec/decode-percent (nth parts 2))}
+      {:charset nil :text (codec/decode-percent (str v))})))
+
+(defn assemble-parameters
+  "RFC 2231 §3–4: fold continuations and extended values into plain ones.
+
+  Three things happen in one pass, because they compose in one header:
+
+  - **Continuations** (`name*0`, `name*1`, …) are concatenated in numeric
+    order. Long filenames are split this way and a parser that reads only
+    `name*0` truncates at the seam.
+  - **Extended values** (`name*`, `name*0*`) are percent-decoded and
+    charset-decoded. This is how a non-ASCII filename travels — RFC 2047
+    encoded-words are *not* allowed in parameters, though senders emit
+    them anyway, so `decode-encoded-words` runs as a fallback on values
+    that were not extended.
+  - **`name*` beats `name`** when both are present (§4). Senders include
+    the plain one for old clients, usually mangled or truncated; taking
+    it in preference is how a correct filename gets thrown away for a
+    broken one."
+  ([params] (assemble-parameters params nil))
+  ([params decoder]
+   (let [;; name, segment index, extended?
+         split-key (fn [k]
+                     (if-let [[_ base idx star] (re-matches #"([^*]+)\*(\d+)(\*?)" k)]
+                       {:base base :index (parse-long idx) :extended? (= "*" star)}
+                       (if-let [[_ base] (re-matches #"([^*]+)\*" k)]
+                         {:base base :index nil :extended? true}
+                         {:base k :index nil :extended? false})))
+         grouped (reduce (fn [acc [k v]]
+                           (let [{:keys [base index extended?]} (split-key k)]
+                             (update acc base (fnil conj [])
+                                     {:index index :extended? extended? :value v})))
+                         {} params)]
+     (into {}
+           (map (fn [[base segments]]
+                  (let [extended (filter :extended? segments)
+                        plain (remove :extended? segments)
+                        ;; §4: the extended form wins outright.
+                        chosen (if (seq extended) extended plain)
+                        ordered (sort-by #(or (:index %) -1) chosen)
+                        any-extended? (boolean (seq extended))
+                        charset (some #(:charset (extended-value (:value %)))
+                                      (filter :extended? ordered))
+                        text (apply str
+                                    (map (fn [{:keys [value extended?]}]
+                                           (if extended?
+                                             (:text (extended-value value))
+                                             value))
+                                         ordered))]
+                    [base (if any-extended?
+                            (codec/decode-charset text charset decoder)
+                            ;; Not legal in a parameter, but senders do it.
+                            (decode-encoded-words text decoder))])))
+           grouped))))
+
 (defn content-type
   "-> `{:type \"text/plain\" :charset \"utf-8\" :boundary \"…\" :params {…}}`.
-  Defaults to text/plain per RFC 2045 §5.2 when the field is absent."
-  [hs]
-  (let [{:keys [value params]} (parse-parameters (or (raw-header hs "content-type") "text/plain"))]
-    {:type (str/lower-case (if (str/blank? value) "text/plain" value))
-     :charset (get params "charset")
-     :boundary (get params "boundary")
-     :params params}))
+  Defaults to text/plain per RFC 2045 §5.2 when the field is absent.
+
+  Parameters are RFC 2231-assembled, so a boundary split across
+  continuations is one boundary here rather than a truncated one — which
+  would mean finding no parts at all in a message that has them."
+  ([hs] (content-type hs nil))
+  ([hs decoder]
+   (let [{:keys [value params]} (parse-parameters (or (raw-header hs "content-type") "text/plain"))
+         params (assemble-parameters params decoder)]
+     {:type (str/lower-case (if (str/blank? value) "text/plain" value))
+      :charset (get params "charset")
+      :boundary (get params "boundary")
+      :params params})))
 
 (defn content-disposition
-  "-> `{:disposition \"attachment\" :filename \"…\" :params {…}}`, or nil."
-  [hs]
-  (when-let [raw (raw-header hs "content-disposition")]
-    (let [{:keys [value params]} (parse-parameters raw)]
-      {:disposition (str/lower-case value)
-       :filename (or (get params "filename") (get params "filename*"))
-       :params params})))
+  "-> `{:disposition \"attachment\" :filename \"…\" :params {…}}`, or nil.
+
+  `filename` here is the RFC 2231-assembled one, so
+  `filename*=UTF-8''%E8%AB%8B%E6%B1%82%E6%9B%B8.pdf` arrives as
+  `請求書.pdf` rather than as its percent-encoding."
+  ([hs] (content-disposition hs nil))
+  ([hs decoder]
+   (when-let [raw (raw-header hs "content-disposition")]
+     (let [{:keys [value params]} (parse-parameters raw)
+           params (assemble-parameters params decoder)]
+       {:disposition (str/lower-case value)
+        :filename (get params "filename")
+        :params params}))))

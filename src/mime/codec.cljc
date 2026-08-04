@@ -121,6 +121,31 @@
                  (recur (+ i 3) (conj out (char (+ (* 16 h1) h2))))
                  (recur (inc i) (conj out c)))))))))))
 
+;; -------------------------------------------------- percent (RFC 2231)
+
+(defn decode-percent
+  "RFC 2231 §4 percent-encoding -> binary string.
+
+  Separate from `decode-quoted-printable` despite the shared `%XX`/`=XX`
+  shape: this one has no soft line breaks and no `_`-is-space rule, and
+  folding them together would mean one of the two silently accepting
+  syntax the other forbids. A malformed escape is left as written, the
+  same choice quoted-printable makes and for the same reason — a filename
+  that reads oddly beats a filename with characters missing."
+  [s]
+  (let [n (count s)]
+    (loop [i 0 out []]
+      (if (>= i n)
+        (apply str out)
+        (let [c (nth s i)]
+          (if (not= \% c)
+            (recur (inc i) (conj out c))
+            (let [h1 (when (< (inc i) n) (hex-val (nth s (inc i))))
+                  h2 (when (< (+ i 2) n) (hex-val (nth s (+ i 2))))]
+              (if (and h1 h2)
+                (recur (+ i 3) (conj out (char (+ (* 16 h1) h2))))
+                (recur (inc i) (conj out c))))))))))
+
 ;; ------------------------------------------------- transfer encodings
 
 (defn decode-transfer
