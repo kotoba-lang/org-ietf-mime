@@ -67,7 +67,7 @@
 ;; second copy of the framing (ADR-2608261100).
 
 (ns mime.framing
-  (:export [header-block-length body-start field-problem delimiter-kind]))
+  (:export [main header-block-length body-start field-problem delimiter-kind]))
 
 ;; --- bytes ----------------------------------------------------------------------
 ;; A Kotoba string is UTF-8 and a message body is arbitrary bytes, so the
@@ -184,3 +184,24 @@
             :not-a-delimiter)
           :not-a-delimiter)
         :not-a-delimiter)))
+
+;; --- the artifact's own conformance check ------------------------------------------
+;;
+;; `main` is the browser profile's entry point -- `runtime/browser-host.mjs`
+;; refuses to instantiate a module without one -- and it is not a stub. It
+;; runs the three findings through the decisions above and answers 0 only
+;; when each still decides the way this object was built to decide, so a
+;; COMPILED artifact can be asked whether it is itself by a host that knows
+;; nothing about mail.
+;;
+;; Three, not ten, and that is measured: the native backends evaluate `main`
+;; as a compile-time oracle with a budget, and ten calls of this shape is
+;; `native artifact oracle evaluation rejected`. The wider check lives in
+;; the suite, which can afford it.
+
+(defn main [] :i64
+  (cond
+    (if (= (field-problem "X-Evil : yes") :bad-name-character) false true) 1
+    (if (= (delimiter-kind "--b " "b") :delimiter) false true) 2
+    (if (= (header-block-length "a: b\n\ntail") 5) false true) 3
+    :else 0))
