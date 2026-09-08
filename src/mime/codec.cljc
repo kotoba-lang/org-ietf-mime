@@ -17,7 +17,7 @@
 
     JS:  new TextDecoder('latin1').decode(bytes)
     JVM: (String. bytes StandardCharsets/ISO_8859_1)"
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 (defn char-code
   "The numeric code of a character, on both hosts.
@@ -84,7 +84,7 @@
   (into {} (map-indexed (fn [i c] [c i]) "0123456789abcdef")))
 
 (defn- hex-val [c]
-  (or (hex-digits c) (hex-digits (first (str/lower-case (str c))))))
+  (or (hex-digits c) (hex-digits (first (str/lower (str c))))))
 
 (defn decode-quoted-printable
   "RFC 2045 §6.7 -> binary string. `underscore-is-space?` for the RFC 2047
@@ -153,7 +153,7 @@
   unchanged — RFC 2045 §6.4 says a receiver that does not recognise one
   should treat the part as application/octet-stream, not discard it."
   [encoding s]
-  (case (some-> encoding str/trim str/lower-case)
+  (case (some-> encoding str/trim str/lower)
     "base64" (decode-base64 s)
     "quoted-printable" (decode-quoted-printable s)
     s))
@@ -220,7 +220,7 @@
   which case they are in, so the choice is theirs and not silent."
   ([s charset] (decode-charset s charset nil))
   ([s charset decoder]
-   (let [cs (some-> charset str/trim str/lower-case (str/replace "\"" ""))]
+   (let [cs (some-> charset str/trim str/lower (str/replace "\"" ""))]
      (cond
        (or (nil? cs) (contains? #{"utf-8" "utf8"} cs)) (utf8-decode s)
        (contains? native-charsets cs) s          ; latin-1 IS the binary string
@@ -282,5 +282,5 @@
   decoder. Lets a caller decide what to do about the ones it cannot,
   instead of finding out from mojibake."
   [charset]
-  (let [cs (some-> charset str/trim str/lower-case (str/replace "\"" ""))]
+  (let [cs (some-> charset str/trim str/lower (str/replace "\"" ""))]
     (or (nil? cs) (contains? native-charsets cs))))
