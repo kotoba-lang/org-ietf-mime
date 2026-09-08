@@ -1,7 +1,7 @@
 (ns mime.header
   "RFC 5322 §2.2 header fields, RFC 2045 §5 parameters, RFC 2047
   encoded-words. Pure; input is a binary string (see `mime.codec`)."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [mime.codec :as codec]))
 
 ;; ------------------------------------------------------------ unfolding
@@ -74,7 +74,7 @@
        unfold
        (keep (fn [line]
                (when-let [i (str/index-of line ":")]
-                 (let [name (str/lower-case (str/trim (subs line 0 i)))]
+                 (let [name (str/lower (str/trim (subs line 0 i)))]
                    (when (seq name)
                      [name (str/triml (subs line (inc i)))])))))
        vec))
@@ -84,7 +84,7 @@
   (RFC 5322 §1.2.2)."
   ([hs name] (header hs name nil))
   ([hs name decoder]
-   (some (fn [[k v]] (when (= (str/lower-case name) k)
+   (some (fn [[k v]] (when (= (str/lower name) k)
                        (decode-encoded-words v decoder)))
          hs)))
 
@@ -93,14 +93,14 @@
   ([hs name] (headers hs name nil))
   ([hs name decoder]
    (->> hs
-        (filter (fn [[k _]] (= (str/lower-case name) k)))
+        (filter (fn [[k _]] (= (str/lower name) k)))
         (mapv (fn [[_ v]] (decode-encoded-words v decoder))))))
 
 (defn raw-header
   "First value for `name`, NOT decoded — for fields like Content-Type
   whose structure must be parsed before any encoded-word could apply."
   [hs name]
-  (some (fn [[k v]] (when (= (str/lower-case name) k) v)) hs))
+  (some (fn [[k v]] (when (= (str/lower name) k) v)) hs))
 
 ;; ---------------------------------------------------------- parameters
 
@@ -133,7 +133,7 @@
        :params (into {}
                      (keep (fn [seg]
                              (when-let [i (str/index-of seg "=")]
-                               [(str/lower-case (str/trim (subs seg 0 i)))
+                               [(str/lower (str/trim (subs seg 0 i)))
                                 (unquote (subs seg (inc i)))])))
                      (rest segments))})))
 
@@ -150,7 +150,7 @@
   [v]
   (let [parts (str/split (str v) #"'" 3)]
     (if (= 3 (count parts))
-      {:charset (not-empty (str/lower-case (first parts)))
+      {:charset (not-empty (str/lower (first parts)))
        :text (codec/decode-percent (nth parts 2))}
       {:charset nil :text (codec/decode-percent (str v))})))
 
@@ -218,7 +218,7 @@
   ([hs decoder]
    (let [{:keys [value params]} (parse-parameters (or (raw-header hs "content-type") "text/plain"))
          params (assemble-parameters params decoder)]
-     {:type (str/lower-case (if (str/blank? value) "text/plain" value))
+     {:type (str/lower (if (str/blank? value) "text/plain" value))
       :charset (get params "charset")
       :boundary (get params "boundary")
       :params params})))
@@ -234,6 +234,6 @@
    (when-let [raw (raw-header hs "content-disposition")]
      (let [{:keys [value params]} (parse-parameters raw)
            params (assemble-parameters params decoder)]
-       {:disposition (str/lower-case value)
+       {:disposition (str/lower value)
         :filename (get params "filename")
         :params params}))))

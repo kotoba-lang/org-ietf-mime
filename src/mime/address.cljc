@@ -10,7 +10,7 @@
   name is a person's surname-first name. Same for `<` `>` inside
   comments. So this walks the string with the quote/comment state
   machine RFC 5322 actually describes."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [mime.header :as header]))
 
 (defn split-list

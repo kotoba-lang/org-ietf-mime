@@ -6,7 +6,7 @@
   received message but explicitly does not parse one, and every host
   capability that could produce one (a Cloudflare Email Worker, an SMTP
   server, an IMAP poller) hands over raw bytes. ADR-2607263000 D8."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [mime.address :as address]
             [mime.codec :as codec]
             [mime.header :as header]))
@@ -70,7 +70,7 @@
     (cond-> {:headers headers
              :content-type type
              :charset charset
-             :encoding (some-> encoding str/trim str/lower-case)
+             :encoding (some-> encoding str/trim str/lower)
              :disposition disposition
              :filename filename}
       multipart? (assoc :parts (if boundary
@@ -125,7 +125,7 @@
   [hs mechanism]
   (when-let [line (header/raw-header hs "authentication-results")]
     (when-let [m (re-find (re-pattern (str "(?i)\\b" mechanism "=(\\w+)")) line)]
-      (keyword (str/lower-case (second m))))))
+      (keyword (str/lower (second m))))))
 
 (defn message-parts
   "Root part + original headers -> exactly the map
