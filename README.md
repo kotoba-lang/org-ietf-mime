@@ -100,6 +100,6 @@ detectable rather than something you discover from mojibake.
 ## Test
 
 ```sh
-nbb --classpath "src:test" scripts/run-tests.cljs   # ClojureScript
+nbb --classpath "src:test" scripts/run-tests.cljk   # ClojureScript
 clojure -M:test                                     # JVM
 ```
