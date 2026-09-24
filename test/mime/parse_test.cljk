@@ -1,6 +1,6 @@
 (ns mime.parse-test
   (:require [kotoba.lang.text :as str]
-            [clojure.test :refer [deftest is testing]]
+            [kotoba.test :refer [deftest is testing]]
             [mime.address :as address]
             [mime.codec :as codec]
             [mime.header :as header]
